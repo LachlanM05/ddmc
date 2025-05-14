@@ -9,3 +9,4 @@ Thank you.
 
 
 and yes, i know it's rough around the edges, but if there any problems lmk.
+^ discord.gg/ZsYRXgRUJr    -> #ddmc channel.
