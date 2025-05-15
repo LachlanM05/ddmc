@@ -29,6 +29,10 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
+# prune that thang
+if os.path.exists(LOG_PATH) and os.path.getsize(LOG_PATH) > 200 * 1024 * 1024:
+    os.remove(LOG_PATH)
+
 # Constants
 PATHS = {
     "VANILLA": os.path.join(APPDATA_DIR, "vanilla"),
@@ -45,6 +49,8 @@ DISCORD_CLIENT_ID = "1371433500745531472"
 
 # Watchdog for playtime and Discord RPC
 class SessionTimer:
+    logging.info("Session Timer Tick")
+
     def __init__(self, rpc, profile_name, mod_name, start_time, on_end_callback):
         self.rpc = rpc
         self.profile_name = profile_name
@@ -116,6 +122,8 @@ class ToolTip:
             self.tipwindow = None
 
 class DDLCManager:
+    logging.info("DDLCManager class loaded.")
+
     def __init__(self, root):
         self.root = root
         self.root.title("DDLC Mod Manager")
@@ -127,20 +135,16 @@ class DDLCManager:
         self.rpc = None
         self.watchdog = None
         self.session_timer = None
-
-        self.konami_index = 0
-        self.konami_code = ["Up", "Up", "Down", "Down", "Left", "Right", "Left", "Right", "Return"]
-
         self.init_discord_rpc()
-        self.create_widgets()              # <--- This creates self.tree
-        self.refresh_profiles()            # <--- Now it's safe to use self.tree
+        self.create_widgets()
+        self.refresh_profiles()
         self.setup_bindings()
         self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
-        self.root.bind("<KeyPress>", self.check_konami_code)
 
 
 
     def load_config(self):
+        logging.info("Loading Config")
         self.config = {
             "debug_enabled": False,
             "dark_mode": True
@@ -156,10 +160,12 @@ class DDLCManager:
                             self.config["dark_mode"] = False
             except Exception as e:
                 print("Failed to read config:", e)
+                logging.info("Failed to read config")
 
 
 
     def save_config(self):
+        logging.info("Saving Config")
         try:
             with open(CONFIG_FILE, "w") as f:
                 if self.config.get("debug_enabled"):
@@ -167,6 +173,7 @@ class DDLCManager:
                 f.write(f"dark_mode={'true' if self.config.get('dark_mode') else 'false'}\n")
         except Exception as e:
             print("Failed to write config:", e)
+            logging.info("Failed to write config")
 
 
 
@@ -193,9 +200,9 @@ class DDLCManager:
     def show_settings_window(self):
         win = Toplevel(self.root)
         win.title("Settings")
-        win.resizable(False, False)  # Prevent manual resizing
+        win.resizable(False, False)
 
-        # Automatically resize to fit content
+        
         content = ttk.Frame(win)
         content.pack(padx=20, pady=20)
 
@@ -229,19 +236,23 @@ class DDLCManager:
             # Wipe config
             def wipe_config():
                 if messagebox.askyesno("Confirm", "Delete config.txt and reset all settings?"):
+                    logging.info("Wipe Config Prompting")
                     try:
+                        logging("Config File Wiped")
                         os.remove(CONFIG_FILE)
                         messagebox.showinfo("Done", "Config wiped. Restarting app...")
                         self.root.destroy()
                         os.execl(sys.executable, sys.executable, *sys.argv)
                     except Exception as e:
                         messagebox.showerror("Error", f"Failed to delete config: {e}")
+                        logging.info(f"Failed to wipe config {e}")
 
             ttk.Button(content, text="Wipe Settings", command=wipe_config).pack(pady=6)
 
             # Force quit
             def force_quit():
-                os._exit(1)  # Immediately kill the process
+                logging("Force quitting. That hurts!")
+                os._exit(1)
 
             ttk.Button(content, text="Force Quit", command=force_quit).pack(pady=2)
 
@@ -254,6 +265,9 @@ class DDLCManager:
 
         footer.bind("<Button-1>", open_creator_link)
 
+        sub_footer = ttk.Label(content, text="Hey~", font=("Segoe UI", 6))
+        sub_footer.pack(pady=(2, 10))
+
         ttk.Button(content, text="Close", command=win.destroy).pack(pady=10)
 
         # Dynamically size the window
@@ -261,6 +275,7 @@ class DDLCManager:
         win.geometry(f"{content.winfo_reqwidth() + 40}x{content.winfo_reqheight() + 40}")
 
     def open_code_entry(self):
+        logging.info("Code Entry Window Opened. Did  you expect a clue here?")
         code_win = Toplevel(self.root)
         code_win.title("    ")
         code_win.resizable(False, False)
@@ -276,6 +291,7 @@ class DDLCManager:
                 self.save_config()
                 code_win.destroy()
                 messagebox.showinfo("Unlocked", "I unlocked some devtools for you, Player~")
+                logging.info("Hehe~ You found it~ Good job~!")
                 self.show_settings_window()  # Re-open with buttons revealed
 
         ttk.Button(code_win, text="Submit", command=check_code).pack(pady=(0, 10))
@@ -358,21 +374,6 @@ class DDLCManager:
         self.status = ttk.Label(self.root, text="Ready", relief=SUNKEN)
         self.status.pack(side=BOTTOM, fill=X)
 
-
-        self.root.bind("<KeyPress>", self.check_konami_code)
-
-    def check_konami_code(self, event):
-        expected = self.konami_code[self.konami_index]
-        if event.keysym == expected:
-            self.konami_index += 1
-            if self.konami_index == len(self.konami_code):
-                messagebox.showinfo("Easter Egg", "Debug Mode Unlocked!")
-                self.config["debug_enabled"] = True
-                self.save_config()
-                self.create_widgets()  # Rebuild widgets with debug button
-        else:
-            self.konami_index = 0
-
     def delete_vanilla(self):
         if os.path.exists(PATHS["VANILLA"]):
             if messagebox.askyesno("Confirm", "Delete imported Vanilla DDLC files?"):
@@ -429,6 +430,15 @@ class DDLCManager:
         try:
             self.rpc = Presence(DISCORD_CLIENT_ID)
             self.rpc.connect()
+
+            self.rpc.update(
+                state="Browsing Profiles",
+                details="In Launcher",
+                large_image="modding_club",
+                large_text="Doki Doki Modding Club",
+                small_image="in_launcher",
+                small_text="idle"
+            )
         except Exception as e:
             logging.warning(f"Discord RPC failed to connect: {e}")
 
@@ -476,6 +486,7 @@ class DDLCManager:
         if path and os.listdir(path):
             mod_name = os.path.basename(path)
             dest = os.path.join(PATHS["MODS"], mod_name)
+            logging.info("Importing Mods")
 
             # Check if the mod folder contains .rpyc or .rpa files in its root
             has_game_files = any(
@@ -486,6 +497,7 @@ class DDLCManager:
             if has_game_files:
                 # Create destination /mod_name/game
                 game_dest = os.path.join(dest, "game")
+                logging.info("Moving detected RPA,RPYC to game.")
                 os.makedirs(game_dest, exist_ok=True)
                 for item in os.listdir(path):
                     s = os.path.join(path, item)
@@ -614,8 +626,10 @@ class DDLCManager:
 
     def launch_profile(self):
         selected = self.tree.selection()
+        logging.info("Beginning Launch Profile")
         if not selected:
             messagebox.showwarning("Warning", "Select a profile first!")
+            logging.info("No profile selected, stopping.")
             return
 
         profile_name = self.tree.item(selected[0], "text")
@@ -626,6 +640,7 @@ class DDLCManager:
 
         if not os.path.exists(exe_path):
             messagebox.showerror("Error", "Executable not found!")
+            logging.info("Executable not found, stopping.")
             return
 
         renpy_save_path = get_ddlc_save_path()
@@ -650,10 +665,12 @@ class DDLCManager:
             cwd=profile_path,
             shell=True
         )
+        logging.info("Game attempted launch.")
 
 
     # Track session time until the user clicks anything
         def end_session(elapsed):
+            logging.info("End Session logic listening")
             settings["playtime_seconds"] += elapsed
             settings["last_played"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             self.save_profile_settings(profile_path, settings)
@@ -671,6 +688,7 @@ class DDLCManager:
         def on_user_action(_):
             if hasattr(self, 'session_timer') and self.session_timer.running:
                 self.session_timer.stop()
+                logging.info("User interaction recorded")
 
         for widget in self.root.winfo_children():
             widget.bind("<Button-1>", on_user_action, add="+")
