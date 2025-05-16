@@ -16,7 +16,7 @@ import webbrowser
 import urllib.request
 
 # PLEASE DO NOT TOUCH! I BEGGGG
-__version__ = "1.2.0"
+__version__ = "1.1.0"
 VERSION_CHECK_URL = "https://lachlanm05.com/ddmc_r/latest_version.txt"
 GITHUB_URL = "https://github.com/LachlanM05/ddmc"
 def parse_version(v):
