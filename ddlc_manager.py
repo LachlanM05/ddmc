@@ -13,6 +13,15 @@ import psutil
 import ctypes
 import sys
 import webbrowser
+import urllib.request
+
+# PLEASE DO NOT TOUCH! I BEGGGG
+__version__ = "1.2.0"
+VERSION_CHECK_URL = "https://lachlanm05.com/ddmc_r/latest_version.txt"
+GITHUB_URL = "https://github.com/LachlanM05/ddmc"
+def parse_version(v):
+    return [int(x) for x in v.strip().split(".") if x.isdigit()]
+
 
 # Use a persistent folder in %APPDATA%
 APPDATA_DIR = os.path.join(os.getenv("APPDATA"), "DDLCModManager")
@@ -160,7 +169,7 @@ class DDLCManager:
                             self.config["dark_mode"] = False
             except Exception as e:
                 print("Failed to read config:", e)
-                logging.info("Failed to read config")
+                logging.error(f"Failed to read config {e}")
 
 
 
@@ -173,7 +182,7 @@ class DDLCManager:
                 f.write(f"dark_mode={'true' if self.config.get('dark_mode') else 'false'}\n")
         except Exception as e:
             print("Failed to write config:", e)
-            logging.info("Failed to write config")
+            logging.error(f"Failed to write config {e}")
 
 
 
@@ -216,6 +225,7 @@ class DDLCManager:
             self.refresh_profiles()
 
         ttk.Checkbutton(content, text="Enable Dark Mode", variable=dark_var, command=toggle_dark_mode).pack(pady=5)
+        ttk.Button(content, text="Check for Updates", command=self.check_for_updates).pack(pady=5)
 
         # Delete buttons
         ttk.Button(content, text="Delete Vanilla", command=self.delete_vanilla).pack(pady=2)
@@ -238,20 +248,21 @@ class DDLCManager:
                 if messagebox.askyesno("Confirm", "Delete config.txt and reset all settings?"):
                     logging.info("Wipe Config Prompting")
                     try:
-                        logging("Config File Wiped")
+                        logging.info("Config File Wiping")
                         os.remove(CONFIG_FILE)
                         messagebox.showinfo("Done", "Config wiped. Restarting app...")
+                        logging.info("Config File Wiped, Restarting")
                         self.root.destroy()
                         os.execl(sys.executable, sys.executable, *sys.argv)
                     except Exception as e:
                         messagebox.showerror("Error", f"Failed to delete config: {e}")
-                        logging.info(f"Failed to wipe config {e}")
+                        logging.error(f"Failed to wipe config {e}")
 
             ttk.Button(content, text="Wipe Settings", command=wipe_config).pack(pady=6)
 
             # Force quit
             def force_quit():
-                logging("Force quitting. That hurts!")
+                logging.info("Force quitting. That hurts!")
                 os._exit(1)
 
             ttk.Button(content, text="Force Quit", command=force_quit).pack(pady=2)
@@ -273,9 +284,33 @@ class DDLCManager:
         # Dynamically size the window
         win.update_idletasks()
         win.geometry(f"{content.winfo_reqwidth() + 40}x{content.winfo_reqheight() + 40}")
+    
+
+    #Update Check Method
+    def check_for_updates(self):
+        try:
+            with urllib.request.urlopen(VERSION_CHECK_URL, timeout=5) as response:
+                latest = response.read().decode("utf-8").strip()
+            logging.info(f"Current version: {__version__}, Latest version: {latest}")
+
+            current_parts = parse_version(__version__)
+            latest_parts = parse_version(latest)
+
+            if current_parts < latest_parts:
+                if messagebox.askyesno("Update Available", f"You're on v{__version__}, but v{latest} is available!\nVisit the GitHub page?"):
+                    webbrowser.open_new(GITHUB_URL)
+            elif current_parts > latest_parts:
+                logging.info("Local version is newer than the latest online.")
+                messagebox.showinfo("You're Ahead!", f"You're running a newer version (v{__version__}) than the latest release (v{latest}).")
+            else:
+                messagebox.showinfo("Up to Date", f"You're on the latest version (v{__version__})")
+        except Exception as e:
+            logging.warning(f"Failed to check for updates: {e}")
+            messagebox.showwarning("Update Check Failed", f"Could not check for updates:\n{e}")
+
 
     def open_code_entry(self):
-        logging.info("Code Entry Window Opened. Did  you expect a clue here?")
+        logging.info("Code Entry Window Opened. Did you expect a clue here?")
         code_win = Toplevel(self.root)
         code_win.title("    ")
         code_win.resizable(False, False)
@@ -287,6 +322,7 @@ class DDLCManager:
 
         def check_code():
             if entry.get().strip() == "Remember: Just Monika":
+                logging.info("Debug Mode Enabled")
                 self.config["debug_enabled"] = True
                 self.save_config()
                 code_win.destroy()
@@ -376,33 +412,41 @@ class DDLCManager:
 
     def delete_vanilla(self):
         if os.path.exists(PATHS["VANILLA"]):
+            logging.info("Delete Vanilla prompt")
             if messagebox.askyesno("Confirm", "Delete imported Vanilla DDLC files?"):
                 shutil.rmtree(PATHS["VANILLA"], ignore_errors=True)
                 messagebox.showinfo("Success", "Vanilla files deleted.")
+                logging.info("Vanila files deleted")
 
     def delete_mods(self):
         if os.path.exists(PATHS["MODS"]):
+            logging.info("Delete Mods prompt")
             if messagebox.askyesno("Confirm", "Delete all imported mods?"):
                 shutil.rmtree(PATHS["MODS"], ignore_errors=True)
                 os.makedirs(PATHS["MODS"], exist_ok=True)
                 messagebox.showinfo("Success", "All mods deleted.")
+                logging.info("All Mods deleted")
 
     def delete_profiles(self):
         if os.path.exists(PATHS["PROFILES"]):
+            logging.info("Delete Profiles prompt")
             if messagebox.askyesno("Confirm", "Delete all profiles?"):
                 shutil.rmtree(PATHS["PROFILES"], ignore_errors=True)
                 os.makedirs(PATHS["PROFILES"], exist_ok=True)
                 messagebox.showinfo("Success", "All profiles deleted.")
+                logging.info("All Profiles deleted")
 
     def clear_log(self):
         try:
             with open(LOG_PATH, "w") as log_file:
                 log_file.write("")
+                logging.info("Log file cleared")
             if self.debug_text.winfo_exists():
                 self.debug_text.delete("1.0", END)
         except Exception as e:
             if self.debug_text.winfo_exists():
                 self.debug_text.insert(END, f"Error clearing log: {e}")
+                logging.error(f"Error clearing log {e}")
 
     def update_debug_log(self):
         try:
@@ -462,6 +506,7 @@ class DDLCManager:
         self.context_menu.add_command(label="Rename", command=self.rename_selected_profile)
         self.context_menu.add_command(label="Delete", command=self.delete_selected_profile)
         self.tree.bind("<Button-3>", self.show_context_menu)
+        self.root.bind("<Control-l>", lambda e: (logging.info("Ctrl+L pressed: Opening debug log"), self.show_debug_window()))
 
     def show_context_menu(self, event):
         item = self.tree.identify_row(event.y)
@@ -475,13 +520,16 @@ class DDLCManager:
         self.root.update_idletasks()
 
     def import_vanilla(self):
+        logging.info("Begin Vanilla Import")
         path = filedialog.askdirectory(title="Select Vanilla DDLC Folder")
         if path and os.path.exists(os.path.join(path, "DDLC.exe")):
             shutil.rmtree(PATHS["VANILLA"], ignore_errors=True)
             shutil.copytree(path, PATHS["VANILLA"])
             messagebox.showinfo("Success", "Vanilla DDLC imported successfully!")
+            logging.info("Vanilla files imported")
 
     def import_mod(self):
+        logging.info("Begin Mod Import")
         path = filedialog.askdirectory(title="Select Mod Folder")
         if path and os.listdir(path):
             mod_name = os.path.basename(path)
@@ -497,7 +545,7 @@ class DDLCManager:
             if has_game_files:
                 # Create destination /mod_name/game
                 game_dest = os.path.join(dest, "game")
-                logging.info("Moving detected RPA,RPYC to game.")
+                logging.info("Game files in root detected, moving to /game")
                 os.makedirs(game_dest, exist_ok=True)
                 for item in os.listdir(path):
                     s = os.path.join(path, item)
@@ -510,6 +558,7 @@ class DDLCManager:
                 shutil.copytree(path, dest, dirs_exist_ok=True)
 
             messagebox.showinfo("Success", f"Mod '{mod_name}' imported!")
+            logging.info(f"Mod {mod_name} Imported successfully")
 
     def view_mods(self):
         self.mods_window = Toplevel(self.root)
@@ -555,6 +604,7 @@ class DDLCManager:
         if not os.listdir(PATHS["VANILLA"]):
             messagebox.showwarning("Warning", "Import vanilla DDLC first!")
             return
+        logging.info("Beginning Profile Creation")
         mods = ["— Vanilla —"] + os.listdir(PATHS["MODS"])
         self.profile_window = Toplevel(self.root)
         self.profile_window.title("Create Profile")
@@ -576,10 +626,12 @@ class DDLCManager:
         mod = self.mod_var.get()
         if not profile_name:
             messagebox.showwarning("Warning", "Enter a profile name!")
+            logging.warning("Profile name cannot be empty")
             return
         profile_path = os.path.join(PATHS["PROFILES"], profile_name)
         if os.path.exists(profile_path):
             messagebox.showerror("Error", "Profile name already exists!")
+            logging.error("Profile arleady exists")
             return
         shutil.copytree(PATHS["VANILLA"], profile_path)
         if mod != "— Vanilla —":
@@ -593,6 +645,7 @@ class DDLCManager:
         }
         self.save_profile_settings(profile_path, settings)
         messagebox.showinfo("Success", f"Profile '{profile_name}' created!")
+        logging.info(f"Profile {profile_name} created")
         self.profile_window.destroy()
         self.refresh_profiles()
 
@@ -659,7 +712,6 @@ class DDLCManager:
         mod_name = settings.get("mod_name", "DDLC")
         start_time = int(time.time())
 
-    # Launch the game in a way that avoids SmartScreen stalls
         process = subprocess.Popen(
             f'start "" "{exe_path}"',
             cwd=profile_path,
@@ -789,7 +841,7 @@ class DDLCManager:
             json.dump(settings, f, indent=2)
 
     def on_exit(self):
-        logging.info("Application closed")
+        logging.info("Application closed. Bye User~")
         self.root.destroy()
 
 if __name__ == "__main__":
