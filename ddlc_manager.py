@@ -17,9 +17,9 @@ import urllib.request
 
 # PLEASE DO NOT TOUCH! I BEGGGG
 __version__ = "1.1.1"
-VERSION_CHECK_URL = "https://lachlanm05.com/ddmc_r/latest_version.txt"
+VERSION_CHECK_URL = "https://lachlanm05.com/ddmc_r/branch/pt_button/latest_version.txt"
 GITHUB_URL = "https://github.com/LachlanM05/ddmc"
-CHANGELOG_URL = "https://lachlanm05.com/ddmc_r/changelog.txt"
+CHANGELOG_URL = "https://lachlanm05.com/ddmc_r/branch/pt_button/changelog.txt"
 EXE_DOWNLOAD_BASE = "https://lachlanm05.com/ddmc_r/ddmc_manager.exe"
 def parse_version(v):
     return [int(x) for x in v.strip().split(".") if x.isdigit()]
@@ -138,7 +138,7 @@ class DDLCManager:
     def __init__(self, root):
         start = time.time()
         self.root = root
-        self.root.title("DDLC Mod Manager")
+        self.root.title("DDLC Mod Manager [pt_button branch]")
         self.root.geometry("900x800")
         self.load_config()
         self.root.after(3000, self.try_delete_old_exe)
@@ -146,6 +146,8 @@ class DDLCManager:
         self.save_config()
         self.style = ttk.Style()
         self.enable_dark_mode()
+        self.tracking_profile = None
+        self.tracking_start_time = None
     
         self.rpc = None
         self.watchdog = None
@@ -506,6 +508,7 @@ del /f /q "%~f0"
             ("Launch Profile", self.launch_profile, "Launch selected profile"),
             ("Choose Executable", self.choose_executable, "Select which .exe to run for the selected profile"),
             ("Refresh", self.refresh_profiles, "Refresh profile list"),
+            ("Start/Stop Timer", self.toggle_manual_timer, "Manually track playtime for last launched profile"),
             ("Settings", self.show_settings_window, "View settings and options")
         ]
 
@@ -540,6 +543,32 @@ del /f /q "%~f0"
 
         self.status = ttk.Label(self.root, text="Ready", relief=SUNKEN)
         self.status.pack(side=BOTTOM, fill=X)
+
+    def toggle_manual_timer(self): 
+        if self.tracking_start_time:
+            # Stop tracking
+            elapsed = int(time.time() - self.tracking_start_time)
+            self.tracking_start_time = None
+            profile_name = self.tracking_profile
+            profile_path = os.path.join(PATHS["PROFILES"], profile_name)
+            settings = self.load_profile_settings(profile_path)
+            settings["playtime_seconds"] += elapsed
+            settings["last_played"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self.save_profile_settings(profile_path, settings)
+            self.refresh_profiles()
+            self.update_status(f"Stopped timer for {profile_name} (Elapsed: {self.format_time(elapsed)})")
+            self.tracking_profile = None
+        else:
+            # Start tracking
+            selected = self.tree.selection()
+            if not selected:
+                messagebox.showwarning("Warning", "Select a profile first!")
+                return
+            profile_name = self.tree.item(selected[0], "text")
+            self.tracking_profile = profile_name
+            self.tracking_start_time = time.time()
+            self.update_status(f"Started timer for {profile_name}")
+
 
     def delete_vanilla(self):
         if os.path.exists(PATHS["VANILLA"]):
@@ -621,13 +650,9 @@ del /f /q "%~f0"
         if self.watchdog:
             self.watchdog.stop()
             self.watchdog.join()
+        if self.tracking_start_time:
+            self.toggle_manual_timer()  # Save the session
         self.root.destroy()
-
-    def bind_all_widgets_to_stop_timer(self, widget):
-        if isinstance(widget, (Button, ttk.Button, ttk.Entry, ttk.Label, ttk.Combobox, ttk.Treeview, ttk.Radiobutton)):
-            widget.bind("<Button-1>", self.stop_timer_if_running, add="+")
-        for child in widget.winfo_children():
-           self.bind_all_widgets_to_stop_timer(child)
 
     def setup_bindings(self):
         self.tree.bind("<Double-1>", lambda e: self.launch_profile())
@@ -852,43 +877,14 @@ del /f /q "%~f0"
         mod_name = settings.get("mod_name", "DDLC")
         start_time = int(time.time())
 
+        self.tracking_profile = profile_name
+
         process = subprocess.Popen(
             f'start "" "{exe_path}"',
             cwd=profile_path,
             shell=True
         )
         logging.info("Game attempted launch.")
-
-
-    # Track session time until the user clicks anything
-        def end_session(elapsed):
-            logging.info("End Session logic listening")
-            settings["playtime_seconds"] += elapsed
-            settings["last_played"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            self.save_profile_settings(profile_path, settings)
-            self.refresh_profiles()
-            self.update_status(f"Last session duration: {self.format_time(elapsed)}")
-            logging.info(f"Game session ended. Elapsed: {elapsed} seconds")
-
-            if renpy_save_path and os.path.exists(renpy_save_path):
-                shutil.rmtree(profile_save_dir, ignore_errors=True)
-                shutil.copytree(renpy_save_path, profile_save_dir)
-
-        self.session_timer = SessionTimer(self.rpc, profile_name, mod_name, start_time, end_session)
-
-        # Hook into any button click to stop the session
-        def on_user_action(_):
-            if hasattr(self, 'session_timer') and self.session_timer.running:
-                self.session_timer.stop()
-                logging.info("User interaction recorded")
-
-        for widget in self.root.winfo_children():
-            widget.bind("<Button-1>", on_user_action, add="+")
-
-        process.wait()
-        # Bind interaction handler to all widgets to end timer
-        self.bind_all_widgets_to_stop_timer(self.root)
-
 
 
     @staticmethod
