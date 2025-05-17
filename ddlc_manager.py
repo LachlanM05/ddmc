@@ -16,9 +16,11 @@ import webbrowser
 import urllib.request
 
 # PLEASE DO NOT TOUCH! I BEGGGG
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 VERSION_CHECK_URL = "https://lachlanm05.com/ddmc_r/latest_version.txt"
 GITHUB_URL = "https://github.com/LachlanM05/ddmc"
+CHANGELOG_URL = "https://lachlanm05.com/ddmc_r/changelog.txt"
+EXE_DOWNLOAD_BASE = "https://lachlanm05.com/ddmc_r/ddmc_manager.exe"
 def parse_version(v):
     return [int(x) for x in v.strip().split(".") if x.isdigit()]
 
@@ -134,10 +136,14 @@ class DDLCManager:
     logging.info("DDLCManager class loaded.")
 
     def __init__(self, root):
+        start = time.time()
         self.root = root
         self.root.title("DDLC Mod Manager")
         self.root.geometry("900x800")
         self.load_config()
+        self.root.after(3000, self.try_delete_old_exe)
+        self.save_config()
+        self.save_config()
         self.style = ttk.Style()
         self.enable_dark_mode()
     
@@ -148,15 +154,49 @@ class DDLCManager:
         self.create_widgets()
         self.refresh_profiles()
         self.setup_bindings()
+        if not self.config.get("disable_auto_update"):
+            self.root.after(8000, lambda: self.check_for_updates(auto=True))
         self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
+        duration = time.time() -start
+        logging.info(f"{duration:.2f}, huh? You're too slow!")
+        
 
+    def try_delete_old_exe(self):
+        old_exe = self.config.get("old_exe")
+        if not old_exe:
+            return
+
+        def delete_task():
+            logging.info(f"Attempting to delete old EXE at: {old_path}")
+            old_path = os.path.join(os.path.dirname(sys.argv[0]), old_exe)
+            for i in range(5):
+                try:
+                    if os.path.exists(old_path):
+                        os.remove(old_path)
+                        logging.info(f"Deleted old executable: {old_path}")
+                    break
+                except PermissionError:
+                    logging.warning(f"Attempt {i+1}: Old EXE still in use. Retrying...")
+                    time.sleep(1.5)
+                except Exception as e:
+                    logging.error(f"Unexpected error while deleting old exe: {e}")
+                    break
+            else:
+                logging.warning("Could not delete old executable after retries.")
+
+            # Clear config after retry attempt ends (success or not)
+            self.config["old_exe"] = None
+            self.save_config()
+
+        Thread(target=delete_task, daemon=True).start()
 
 
     def load_config(self):
         logging.info("Loading Config")
         self.config = {
             "debug_enabled": False,
-            "dark_mode": True
+            "dark_mode": True,
+            "ignored_update_version": None
         }
         if os.path.exists(CONFIG_FILE):
             try:
@@ -167,9 +207,17 @@ class DDLCManager:
                             self.config["debug_enabled"] = True
                         elif line == "dark_mode=false":
                             self.config["dark_mode"] = False
+                        if line.startswith("ignore_update="):
+                            self.config["ignored_update_version"] = line.split("=")[1].strip()
+                        elif line.startswith("old_exe="):
+                            self.config["old_exe"] = line.split("=")[1].strip()
+                        elif line == "disable_auto_update=true":
+                            self.config["disable_auto_update"] = True
             except Exception as e:
                 print("Failed to read config:", e)
                 logging.error(f"Failed to read config {e}")
+
+
 
 
 
@@ -180,9 +228,18 @@ class DDLCManager:
                 if self.config.get("debug_enabled"):
                     f.write("debug=true\n")
                 f.write(f"dark_mode={'true' if self.config.get('dark_mode') else 'false'}\n")
+                if self.config.get("ignored_update_version"):
+                    f.write(f"ignore_update={self.config['ignored_update_version']}\n")
+                if self.config.get("old_exe"):
+                    f.write(f"old_exe={self.config['old_exe']}\n")
+                if self.config.get("disable_auto_update"):
+                    f.write("disable_auto_update=true\n")
         except Exception as e:
             print("Failed to write config:", e)
             logging.error(f"Failed to write config {e}")
+
+
+
 
 
 
@@ -215,6 +272,9 @@ class DDLCManager:
         content = ttk.Frame(win)
         content.pack(padx=20, pady=20)
 
+        #Update
+        ttk.Button(content, text="Check for Updates", command=lambda: self.check_for_updates(auto=False)).pack(pady=(10, 0))
+
         # Dark mode toggle
         dark_var = BooleanVar(value=self.config.get("dark_mode", True))
         def toggle_dark_mode():
@@ -224,8 +284,14 @@ class DDLCManager:
             self.create_widgets()
             self.refresh_profiles()
 
+        # Autoupdate toggle
         ttk.Checkbutton(content, text="Enable Dark Mode", variable=dark_var, command=toggle_dark_mode).pack(pady=5)
-        ttk.Button(content, text="Check for Updates", command=self.check_for_updates).pack(pady=5)
+        update_var = BooleanVar(value=not self.config.get("disable_auto_update", False))
+        def toggle_auto_update():
+            self.config["disable_auto_update"] = not update_var.get()
+            self.save_config()
+        ttk.Checkbutton(content, text="Check for updates at launch", variable=update_var, command=toggle_auto_update).pack(pady=5)
+
 
         # Delete buttons
         ttk.Button(content, text="Delete Vanilla", command=self.delete_vanilla).pack(pady=2)
@@ -276,10 +342,12 @@ class DDLCManager:
 
         footer.bind("<Button-1>", open_creator_link)
 
-        sub_footer = ttk.Label(content, text="Hey~", font=("Segoe UI", 6))
-        sub_footer.pack(pady=(2, 10))
+
 
         ttk.Button(content, text="Close", command=win.destroy).pack(pady=10)
+
+        sub_footer = ttk.Label(content, text=f"Version {__version__}", font=("Segoe UI", 6))
+        sub_footer.pack(pady=(2, 10))
 
         # Dynamically size the window
         win.update_idletasks()
@@ -287,26 +355,89 @@ class DDLCManager:
     
 
     #Update Check Method
-    def check_for_updates(self):
+    def check_for_updates(self, auto=False):
         try:
             with urllib.request.urlopen(VERSION_CHECK_URL, timeout=5) as response:
                 latest = response.read().decode("utf-8").strip()
-            logging.info(f"Current version: {__version__}, Latest version: {latest}")
+            with urllib.request.urlopen(CHANGELOG_URL, timeout=5) as response:
+                changelog = response.read().decode("utf-8").strip()
+
+            if self.config.get("ignored_update_version") == latest:
+                return  # User ignored this version
 
             current_parts = parse_version(__version__)
             latest_parts = parse_version(latest)
 
             if current_parts < latest_parts:
-                if messagebox.askyesno("Update Available", f"You're on v{__version__}, but v{latest} is available!\nVisit the GitHub page?"):
-                    webbrowser.open_new(GITHUB_URL)
+                def ignore_future():
+                    self.config["ignored_update_version"] = latest
+                    self.save_config()
+                    update_win.destroy()
+
+                def download_update():
+                    exe_url = "https://lachlanm05.com/ddmc_r/ddlc_manager.exe"
+                    exe_filename = f"ddlc_manager_{latest}.exe"
+                    exe_path = os.path.join(os.path.dirname(sys.argv[0]), exe_filename)
+
+                    cleanup_script = os.path.join(os.path.dirname(sys.argv[0]), "cleanup_old_exe.bat")
+                    old_path = os.path.join(os.path.dirname(sys.argv[0]), self.config["old_exe"])
+                    new_name = "ddlc_manager.exe"
+
+                    try:
+                        urllib.request.urlretrieve(exe_url, exe_path)
+                        logging.info(f"Downloaded new version to {exe_path}")
+
+                        self.config["old_exe"] = os.path.basename(sys.argv[0])
+                        self.save_config()
+
+                        # Write cleanup batch script
+                        with open(cleanup_script, "w") as f:
+                            f.write(f"""@echo off
+timeout /t 3 > NUL
+del /f /q "{old_path}"
+rename "{exe_filename}" "{new_name}"
+del /f /q "%~f0"
+""")
+
+                        subprocess.Popen([exe_path])
+                        subprocess.Popen(["cmd", "/c", cleanup_script], creationflags=subprocess.CREATE_NO_WINDOW)
+                        self.root.destroy()
+
+                    except Exception as e:
+                        messagebox.showerror("Download Failed", f"Could not download the update:\n{e}")
+                        logging.error(f"Failed to download update: {e}")
+
+
+
+
+
+                update_win = Toplevel(self.root)
+                update_win.title("Update Available!")
+                update_win.geometry("500x400")
+
+                ttk.Label(update_win, text=f"A new version (v{latest}) is available!").pack(pady=10)
+                text = Text(update_win, wrap="word", height=15, bg="#f4f4f4")
+                text.insert(END, changelog)
+                text.config(state=DISABLED)
+                text.pack(padx=10, pady=5, fill=BOTH, expand=True)
+
+                btn_frame = ttk.Frame(update_win)
+                btn_frame.pack(pady=10)
+                ttk.Button(btn_frame, text="Download and Launch", command=download_update).pack(side=LEFT, padx=5)
+                ttk.Button(btn_frame, text="Ignore this version", command=ignore_future).pack(side=LEFT, padx=5)
+                ttk.Button(btn_frame, text="Close", command=update_win.destroy).pack(side=LEFT, padx=5)
+
             elif current_parts > latest_parts:
-                logging.info("Local version is newer than the latest online.")
-                messagebox.showinfo("You're Ahead!", f"You're running a newer version (v{__version__}) than the latest release (v{latest}).")
+                if not auto:
+                    messagebox.showinfo("You're Ahead!", f"You're running a newer version (v{__version__}) than v{latest}.")
             else:
-                messagebox.showinfo("Up to Date", f"You're on the latest version (v{__version__})")
+                if not auto:
+                    messagebox.showinfo("Up to Date", f"You're on the latest version (v{__version__})")
+
         except Exception as e:
-            logging.warning(f"Failed to check for updates: {e}")
-            messagebox.showwarning("Update Check Failed", f"Could not check for updates:\n{e}")
+            logging.warning(f"Update check failed: {e}")
+            if not auto:
+                messagebox.showwarning("Update Check Failed", f"Could not check for updates:\n{e}")
 
 
     def open_code_entry(self):
@@ -624,6 +755,11 @@ class DDLCManager:
     def build_profile(self):
         profile_name = self.profile_entry.get().strip()
         mod = self.mod_var.get()
+
+        if not profile_name.isalnum():
+            messagebox.showerror("Error", "Profile names must only contain letters and numbers!")
+            logging.warning("Profile name contains invalid characters")
+            return
         if not profile_name:
             messagebox.showwarning("Warning", "Enter a profile name!")
             logging.warning("Profile name cannot be empty")
@@ -636,8 +772,12 @@ class DDLCManager:
         shutil.copytree(PATHS["VANILLA"], profile_path)
         if mod != "— Vanilla —":
             shutil.copytree(os.path.join(PATHS["MODS"], mod), profile_path, dirs_exist_ok=True)
+        original_exe = os.path.join(profile_path, "DDLC.exe")
+        renamed_exe = os.path.join(profile_path, f"{profile_name}.exe")
+        if os.path.exists(original_exe):
+            os.rename(original_exe, renamed_exe)
         settings = {
-            "preferred_exe": "DDLC.exe",
+            "preferred_exe": f"{profile_name}.exe",
             "mod_name": mod if mod != "— Vanilla —" else "Vanilla",
             "install_date": datetime.now().strftime("%Y-%m-%d"),
             "last_played": None,
@@ -823,22 +963,6 @@ class DDLCManager:
         shutil.rmtree(backup_path, ignore_errors=True)
         if os.path.exists(PATHS["APPDATA"]):
             shutil.copytree(PATHS["APPDATA"], backup_path)
-
-    @staticmethod
-    def load_profile_settings(path):
-        settings_path = os.path.join(path, "settings.json")
-        try:
-            with open(settings_path, "r") as f:
-                return json.load(f)
-        except Exception as e:
-            logging.warning(f"Settings load error: {e}")
-            return {}
-
-    @staticmethod
-    def save_profile_settings(path, settings):
-        settings_path = os.path.join(path, "settings.json")
-        with open(settings_path, "w") as f:
-            json.dump(settings, f, indent=2)
 
     def on_exit(self):
         logging.info("Application closed. Bye User~")
