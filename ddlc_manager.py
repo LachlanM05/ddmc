@@ -216,6 +216,30 @@ class DDLCManager:
             except Exception as e:
                 print("Failed to read config:", e)
                 logging.error(f"Failed to read config {e}")
+    
+    def load_profile_settings(self, profile_path):
+        settings_path = os.path.join(profile_path, "settings.json")
+        if os.path.exists(settings_path):
+            try:
+                with open(settings_path, "r") as f:
+                    return json.load(f)
+            except Exception as e:
+                logging.error(f"Failed to read profile settings from {settings_path}: {e}")
+        return {
+            "preferred_exe": "DDLC.exe",
+            "mod_name": "Unknown",
+            "install_date": "Unknown",
+            "last_played": None,
+            "playtime_seconds": 0
+        }
+
+    def save_profile_settings(self, profile_path, settings):
+        settings_path = os.path.join(profile_path, "settings.json")
+        try:
+            with open(settings_path, "w") as f:
+                json.dump(settings, f, indent=4)
+        except Exception as e:
+            logging.error(f"Failed to save profile settings to {settings_path}: {e}")
 
 
 
