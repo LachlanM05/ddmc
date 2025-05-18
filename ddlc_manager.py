@@ -213,6 +213,8 @@ class DDLCManager:
                             self.config["old_exe"] = line.split("=")[1].strip()
                         elif line == "disable_auto_update=true":
                             self.config["disable_auto_update"] = True
+                        elif line.startswith("last_profile="):
+                            self.config["last_profile"] = line.split("=")[1].strip()
             except Exception as e:
                 print("Failed to read config:", e)
                 logging.error(f"Failed to read config {e}")
@@ -258,6 +260,8 @@ class DDLCManager:
                     f.write(f"old_exe={self.config['old_exe']}\n")
                 if self.config.get("disable_auto_update"):
                     f.write("disable_auto_update=true\n")
+                if self.config.get("last_profile"):
+                    f.write(f"last_profile={self.config['last_profile']}\n")
         except Exception as e:
             print("Failed to write config:", e)
             logging.error(f"Failed to write config {e}")
@@ -332,6 +336,7 @@ class DDLCManager:
             ttk.Button(content, text="Open Profiles Folder", command=lambda: os.startfile(PATHS["PROFILES"])).pack(pady=2)
             ttk.Button(content, text="Open Mods Folder", command=lambda: os.startfile(PATHS["MODS"])).pack(pady=2)
             ttk.Button(content, text="Open Debug Log", command=self.show_debug_window).pack(pady=2)
+            ttk.Button(content, text="Open Session Info", command=self.show_session_info).pack(pady=2)
 
             # Wipe config
             def wipe_config():
@@ -500,6 +505,53 @@ del /f /q "%~f0"
         self.debug_text = Text(self.debug_window, wrap="word", bg="#1e1e1e", fg="#d4d4d4")
         self.debug_text.pack(fill=BOTH, expand=True)
         self.update_debug_log()
+    
+    def show_session_info(self):
+        info_win = Toplevel(self.root)
+        info_win.title("Session Info")
+        info_win.geometry("400x300")
+        info_win.resizable(False, False)
+
+        content = ttk.Frame(info_win)
+        content.pack(padx=20, pady=20, fill=BOTH, expand=True)
+
+        # Launch Time
+        launch_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ttk.Label(content, text=f"Launch Time: {launch_time}").pack(anchor="w", pady=5)
+
+        # Discord RPC status
+        rpc_status = "Not Connected"
+        if self.rpc:
+            try:
+                rpc_status = "Connected"
+            except Exception as e:
+                rpc_status = f"Error: {e}"
+        ttk.Label(content, text=f"Discord RPC: {rpc_status}").pack(anchor="w", pady=5)
+
+        # Version
+        ttk.Label(content, text=f"DDMC Version: {__version__}").pack(anchor="w", pady=5)
+
+        # Total playtime
+        total_seconds = 0
+        for profile_name in os.listdir(PATHS["PROFILES"]):
+            settings_path = os.path.join(PATHS["PROFILES"], profile_name, "settings.json")
+            if os.path.exists(settings_path):
+                try:
+                    with open(settings_path, "r") as f:
+                        settings = json.load(f)
+                        total_seconds += int(settings.get("playtime_seconds", 0))
+                except Exception as e:
+                    logging.warning(f"Could not load playtime from {profile_name}: {e}")
+
+        def format_time(seconds):
+            hrs = seconds // 3600
+            mins = (seconds % 3600) % 60
+            return f"{hrs}h {mins}m"
+
+        ttk.Label(content, text=f"Total Playtime: {format_time(total_seconds)}").pack(anchor="w", pady=5)
+
+        ttk.Button(content, text="Close", command=info_win.destroy).pack(pady=(20, 5))
+
 
     def update_debug_log(self):
         try:
@@ -511,7 +563,6 @@ del /f /q "%~f0"
         except Exception as e:
             self.debug_text.insert(END, f"Error reading log: {e}")
         self.root.after(2000, self.update_debug_log)
-
     def create_widgets(self):
         for widget in self.root.winfo_children():
             widget.destroy()
@@ -528,7 +579,7 @@ del /f /q "%~f0"
             ("View Mods", self.view_mods, "View and rename imported mods"),
             ("Create Profile", self.create_profile, "Create new modded or vanilla profile"),
             ("Launch Profile", self.launch_profile, "Launch selected profile"),
-            ("Choose Executable", self.choose_executable, "Select which .exe to run for the selected profile"),
+            ("Profile Settings", self.edit_profile_settings, "Edit executable and Ren'Py folder"),
             ("Refresh", self.refresh_profiles, "Refresh profile list"),
             ("Settings", self.show_settings_window, "View settings and options")
         ]
@@ -662,6 +713,7 @@ del /f /q "%~f0"
         self.context_menu.add_command(label="Delete", command=self.delete_selected_profile)
         self.tree.bind("<Button-3>", self.show_context_menu)
         self.root.bind("<Control-l>", lambda e: (logging.info("Ctrl+L pressed: Opening debug log"), self.show_debug_window()))
+        self.root.bind("<Control-i>", lambda e: (logging.info("Control+O pressed: Opening Info Panel")))
 
     def show_context_menu(self, event):
         item = self.tree.identify_row(event.y)
@@ -780,10 +832,12 @@ del /f /q "%~f0"
         profile_name = self.profile_entry.get().strip()
         mod = self.mod_var.get()
 
-        if not profile_name.isalnum():
-            messagebox.showerror("Error", "Profile names must only contain letters and numbers!")
-            logging.warning("Profile name contains invalid characters")
+        import string
+        valid_chars = string.ascii_letters + string.digits + " _-"
+        if not all(c in valid_chars for c in profile_name):
+            messagebox.showerror("Error", "Profile name contains invalid characters!")
             return
+
         if not profile_name:
             messagebox.showwarning("Warning", "Enter a profile name!")
             logging.warning("Profile name cannot be empty")
@@ -796,10 +850,6 @@ del /f /q "%~f0"
         shutil.copytree(PATHS["VANILLA"], profile_path)
         if mod != "— Vanilla —":
             shutil.copytree(os.path.join(PATHS["MODS"], mod), profile_path, dirs_exist_ok=True)
-        original_exe = os.path.join(profile_path, "DDLC.exe")
-        renamed_exe = os.path.join(profile_path, f"{profile_name}.exe")
-        if os.path.exists(original_exe):
-            os.rename(original_exe, renamed_exe)
         settings = {
             "preferred_exe": f"{profile_name}.exe",
             "mod_name": mod if mod != "— Vanilla —" else "Vanilla",
@@ -812,6 +862,65 @@ del /f /q "%~f0"
         logging.info(f"Profile {profile_name} created")
         self.profile_window.destroy()
         self.refresh_profiles()
+
+    def edit_profile_settings(self):
+        selected = self.tree.selection()
+        if not selected:
+            messagebox.showwarning("Warning", "Select a profile first!")
+            return
+
+        profile_name = self.tree.item(selected[0], "text")
+        profile_path = os.path.join(PATHS["PROFILES"], profile_name)
+        settings = self.load_profile_settings(profile_path)
+
+        win = Toplevel(self.root)
+        win.title(f"Settings for '{profile_name}'")
+        win.geometry("400x250")
+
+        # Executable section
+        ttk.Label(win, text="Preferred Executable:").pack(pady=(10, 0))
+        exe_label = ttk.Label(win, text=settings.get("preferred_exe", "DDLC.exe"))
+        exe_label.pack()
+
+        def choose_exe():
+            exes = [f for f in os.listdir(profile_path) if f.lower().endswith(".exe")]
+            if not exes:
+                messagebox.showerror("Error", "No executables found!")
+                return
+
+            exe_win = Toplevel(win)
+            exe_win.title("Choose Executable")
+            exe_var = StringVar(value=settings.get("preferred_exe", exes[0]))
+            for exe in exes:
+                ttk.Radiobutton(exe_win, text=exe, variable=exe_var, value=exe).pack(anchor=W)
+
+            def apply():
+                settings["preferred_exe"] = exe_var.get()
+                exe_label.config(text=exe_var.get())
+                self.save_profile_settings(profile_path, settings)
+                exe_win.destroy()
+
+            ttk.Button(exe_win, text="OK", command=apply).pack(pady=5)
+
+        ttk.Button(win, text="Change Executable", command=choose_exe).pack(pady=5)
+
+        # Ren'Py folder section
+        ttk.Label(win, text="Ren'Py Save Folder:").pack(pady=(10, 0))
+        renpy_label = ttk.Label(win, text=settings.get("renpy_folder", "(Auto)"))
+        renpy_label.pack()
+
+        def choose_renpy_folder():
+            path = filedialog.askdirectory(initialdir=PATHS["APPDATA"], title="Select Ren'Py Save Folder")
+            if path:
+                folder_name = os.path.basename(path)
+                settings["renpy_folder"] = folder_name
+                renpy_label.config(text=folder_name)
+                self.save_profile_settings(profile_path, settings)
+
+        ttk.Button(win, text="Change Ren'Py Folder", command=choose_renpy_folder).pack(pady=5)
+
+        ttk.Button(win, text="Close", command=win.destroy).pack(pady=15)
+
 
     def choose_executable(self):
         selected = self.tree.selection()
@@ -850,6 +959,24 @@ del /f /q "%~f0"
             return
 
         profile_name = self.tree.item(selected[0], "text")
+        # clean renpy, please work.
+        last_profile = self.config.get("last_profile")
+        if last_profile and last_profile != profile_name:
+            last_settings_path = os.path.join(PATHS["PROFILES"], last_profile, "settings.json")
+            if os.path.exists(last_settings_path):
+                try:
+                    with open(last_settings_path, "r") as f:
+                        last_settings = json.load(f)
+                    last_renpy_folder = last_settings.get("renpy_folder")
+                    if last_renpy_folder:
+                        last_renpy_path = os.path.join(PATHS["APPDATA"], last_renpy_folder)
+                        if os.path.exists(last_renpy_folder):
+                            shutil.rmtree(last_renpy_path, ignore_errors=True)
+                            logging.info(f"Cleaned up Renpy folder from last profile '{last_profile}'")
+                except Exception as e:
+                    logging.warning(f"Failed to clean up last profile save data {e}")
+
+
         profile_path = os.path.join(PATHS["PROFILES"], profile_name)
         settings = self.load_profile_settings(profile_path)
         exe_name = settings.get("preferred_exe", "DDLC.exe")
@@ -860,19 +987,37 @@ del /f /q "%~f0"
             logging.info("Executable not found, stopping.")
             return
 
-        renpy_save_path = get_ddlc_save_path()
-        profile_save_dir = os.path.join(profile_path, "save")
+        renpy_folder_name = settings.get("renpy_folder")
+        if not renpy_folder_name:
+            logging.warning("No Ren'Py folder set in profile settings. Skipping save management.")
+            renpy_save_path = None
+        else:
+            renpy_save_path = os.path.join(PATHS["APPDATA"], renpy_folder_name)
 
+        profile_backup_path = os.path.join(PATHS["BACKUPS"], profile_name)
+        os.makedirs(profile_backup_path, exist_ok=True)
+        # Always clear the selected Ren'Py folder before restoring to it
         if renpy_save_path and os.path.exists(renpy_save_path):
-            os.makedirs(profile_save_dir, exist_ok=True)
-            shutil.rmtree(profile_save_dir, ignore_errors=True)
-            shutil.copytree(renpy_save_path, profile_save_dir)
+            try:
+                shutil.rmtree(renpy_save_path, ignore_errors=True)
+                logging.info(f"Wiped existing Ren'Py folder at '{renpy_save_path}' before restore.")
+            except Exception as e:
+                logging.warning(f"Failed to wipe Ren'Py folder before restore: {e}")
 
+
+        # Backup current save folder
         if renpy_save_path and os.path.exists(renpy_save_path):
+            shutil.rmtree(profile_backup_path, ignore_errors=True)
+            shutil.copytree(renpy_save_path, profile_backup_path)
+            logging.info(f"Moved save folder '{renpy_save_path}' to backup for profile '{profile_name}'")
+
+        # Restore saves into Ren'Py folder
+        if renpy_save_path and os.path.exists(profile_backup_path):
             shutil.rmtree(renpy_save_path, ignore_errors=True)
-        if os.path.exists(profile_save_dir):
-            shutil.copytree(profile_save_dir, renpy_save_path or PATHS["APPDATA"], dirs_exist_ok=True)
+            shutil.copytree(profile_backup_path, renpy_save_path)
+            logging.info(f"Restored save data to '{renpy_save_path}' for profile '{profile_name}'")
 
+        # Launch the executable
         mod_name = settings.get("mod_name", "DDLC")
         start_time = int(time.time())
 
@@ -882,9 +1027,10 @@ del /f /q "%~f0"
             shell=True
         )
         logging.info("Game attempted launch.")
+        self.config["last_profile"] = profile_name
+        self.save_config()
 
-
-    # Track session time until the user clicks anything
+        # Timer to track playtime
         def end_session(elapsed):
             logging.info("End Session logic listening")
             settings["playtime_seconds"] += elapsed
@@ -894,13 +1040,15 @@ del /f /q "%~f0"
             self.update_status(f"Last session duration: {self.format_time(elapsed)}")
             logging.info(f"Game session ended. Elapsed: {elapsed} seconds")
 
+            # Re-backup the save data after closing
             if renpy_save_path and os.path.exists(renpy_save_path):
-                shutil.rmtree(profile_save_dir, ignore_errors=True)
-                shutil.copytree(renpy_save_path, profile_save_dir)
+                shutil.rmtree(profile_backup_path, ignore_errors=True)
+                shutil.copytree(renpy_save_path, profile_backup_path)
+                logging.info(f"Session end; backed up Ren'Py folder '{renpy_save_path}' to '{profile_backup_path}'")
 
         self.session_timer = SessionTimer(self.rpc, profile_name, mod_name, start_time, end_session)
 
-        # Hook into any button click to stop the session
+        # Stop timer on interaction
         def on_user_action(_):
             if hasattr(self, 'session_timer') and self.session_timer.running:
                 self.session_timer.stop()
@@ -910,8 +1058,8 @@ del /f /q "%~f0"
             widget.bind("<Button-1>", on_user_action, add="+")
 
         process.wait()
-        # Bind interaction handler to all widgets to end timer
         self.bind_all_widgets_to_stop_timer(self.root)
+
 
 
 
@@ -976,10 +1124,22 @@ del /f /q "%~f0"
 
     @staticmethod
     def format_time(seconds):
-        hrs = seconds // 3600
-        mins = (seconds % 3600) // 60
-        secs = seconds % 60
-        return f"{hrs:02}:{mins:02}:{secs:02}"
+        if seconds < 60:
+            return f"{seconds}s"
+        elif seconds < 3600:
+            mins = seconds // 60
+            secs = seconds % 60
+            return f"{mins}m {secs}s"
+        elif seconds < 86400:
+            hrs = seconds // 3600
+            mins = (seconds % 3600) // 60
+            return f"{hrs}h {mins}m"
+        else:
+            days = seconds // 86400
+            hrs = (seconds % 86400) // 3600
+            return f"{days}d {hrs}h"
+
+
 
     @staticmethod
     def backup_appdata(profile):
