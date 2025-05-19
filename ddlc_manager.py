@@ -1057,7 +1057,6 @@ del /f /q "%~f0"
         for widget in self.root.winfo_children():
             widget.bind("<Button-1>", on_user_action, add="+")
 
-        process.wait()
         self.bind_all_widgets_to_stop_timer(self.root)
 
 

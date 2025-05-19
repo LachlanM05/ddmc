@@ -2,8 +2,12 @@
 build/
 dist/
 
-# Ignore Windows batch file used for building
+# Ignore Windows batch file used for building and the one for building a release
 compile.bat
+build_release.bat
 
 # Ignore PyInstaller spec file
 ddlc_manager.spec
+
+#Ignore v.1.1.2 python script for reference
+ddlc_manager_112.py
