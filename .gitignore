@@ -4,7 +4,7 @@ dist/
 
 # Ignore Windows batch file used for building and the one for building a release
 compile.bat
-build_release.bat
+release.bat
 
 # Ignore PyInstaller spec file
 ddlc_manager.spec
