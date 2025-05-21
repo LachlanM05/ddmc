@@ -14,22 +14,30 @@ import ctypes
 import sys
 import webbrowser
 import urllib.request
-
-# PLEASE DO NOT TOUCH! I BEGGGG
-__version__ = "1.1.4"
-VERSION_CHECK_URL = "https://lachlanm05.com/ddmc_r/latest_version.txt"
-GITHUB_URL = "https://github.com/LachlanM05/ddmc"
-CHANGELOG_URL = "https://lachlanm05.com/ddmc_r/changelog.txt"
-EXE_DOWNLOAD_BASE = "https://lachlanm05.com/ddmc_r/ddmc_manager.exe"
-def parse_version(v):
-    return [int(x) for x in v.strip().split(".") if x.isdigit()]
-
-
 # Use a persistent folder in %APPDATA%
 APPDATA_DIR = os.path.join(os.getenv("APPDATA"), "DDLCModManager")
 os.makedirs(APPDATA_DIR, exist_ok=True)
 
+
+# PLEASE DO NOT TOUCH! I BEGGGG
+__version__ = "2.0.0"
+VERSION_CHECK_URL = "https://lachlanm05.com/ddmc_r/latest_version.txt"
+GITHUB_URL = "https://github.com/LachlanM05/ddmc"
+CHANGELOG_URL = "https://lachlanm05.com/ddmc_r/changelog.txt"
 CONFIG_FILE = os.path.join(APPDATA_DIR, "config.txt")
+def parse_version(v):
+    return [int(x) for x in v.strip().split(".") if x.isdigit()]
+
+# External downloads
+EXE_DOWNLOAD_BASE = "https://lachlanm05.com/ddmc_r/ddmc_manager.exe"
+ICON_URL = "https://lachlanm05.com/ddmc_r/icon.ico"
+ICON_PATH = os.path.join(APPDATA_DIR, "icon.ico")
+
+
+
+
+
+
 
 
 # Configure logging
@@ -141,6 +149,14 @@ class DDLCManager:
         self.root.title("DDLC Mod Manager")
         self.root.geometry("900x800")
         self.load_config()
+        if not self.config.get("seen_intro"):
+            self.root.after(1000, self.show_intro_window)
+        self.ensure_icon_downloaded()
+        if os.path.exists(ICON_PATH):
+            try:
+                self.root.iconbitmap(ICON_PATH)
+            except Exception as e:
+                logging.warning(f"Failed to apply icon: {e}")
         self.root.after(3000, self.try_delete_old_exe)
         self.save_config()
         self.save_config()
@@ -215,9 +231,20 @@ class DDLCManager:
                             self.config["disable_auto_update"] = True
                         elif line.startswith("last_profile="):
                             self.config["last_profile"] = line.split("=")[1].strip()
+                        elif line == "seen_intro=true":
+                            self.config["seen_intro"] = True
             except Exception as e:
                 print("Failed to read config:", e)
                 logging.error(f"Failed to read config {e}")
+
+    def ensure_icon_downloaded(self):
+        if not os.path.exists(ICON_PATH):
+            try:
+                urllib.request.urlretrieve(ICON_URL, ICON_PATH)
+                logging.info("Downloaded window icon.")
+            except Exception as e:
+                logging.warning(f"Failed to download icon: {e}")
+
     
     def load_profile_settings(self, profile_path):
         settings_path = os.path.join(profile_path, "settings.json")
@@ -243,10 +270,6 @@ class DDLCManager:
         except Exception as e:
             logging.error(f"Failed to save profile settings to {settings_path}: {e}")
 
-
-
-
-
     def save_config(self):
         logging.info("Saving Config")
         try:
@@ -260,12 +283,64 @@ class DDLCManager:
                     f.write(f"old_exe={self.config['old_exe']}\n")
                 if self.config.get("disable_auto_update"):
                     f.write("disable_auto_update=true\n")
+                if self.config.get("seen_intro"):
+                    f.write("seen_intro=true\n")
                 if self.config.get("last_profile"):
                     f.write(f"last_profile={self.config['last_profile']}\n")
         except Exception as e:
             print("Failed to write config:", e)
             logging.error(f"Failed to write config {e}")
 
+    def apply_theme_to_window(self, window):
+        bg = "#1e1e1e" if self.config.get("dark_mode", True) else "#f0f0f0"
+        fg = "#dcdcdc" if self.config.get("dark_mode", True) else "#000000"
+
+        window.configure (bg=bg)
+        for widget in window.winfo_children():
+            self.style_widget(widget, bg, fg)
+    
+    def style_widget(self, widget, bg, fg):
+        if isinstance(widget, (ttk.Frame, ttk.LabelFrame)):
+            for child in widget.winfo_children():
+                self.style_widget(child, bg, fg)
+        elif isinstance(widget, (Label, Text, Entry)):
+            widget.config(bg=bg, fg=fg, insertbackground=fg)
+        elif isinstance(widget, Toplevel):
+            self.apply_theme_to_window(widget)
+        elif hasattr(widget, "winfo_children"):
+            for child in widget.winfo_children():
+                self.style_widget(child, bg, fg)
+
+    def show_intro_window(self):
+        intro = Toplevel(self.root)
+        intro.title("Welcome to the DDMC Manager")
+        intro.geometry("600x400")
+        intro.resizable(False, False)
+
+        frame = ttk.Frame(intro)
+        frame.pack(fill=BOTH, expand=True, padx=20, pady=20)
+
+        intro_text = """Welcome to the Doki Doki Modding Club Mod Manager!\n
+        Or just DDMC, because I don't wanna type that out the entire time.\n
+        Here's a quick little setup guide :)\n
+        \n
+        - Import the vanilla DDLC (Download at ddlc.moe)\n
+        - Then, import a mod (For now, unzip your mods, then import the mod folder)\n
+        - Then create a profile, and open the game once and make a save.\n
+        - Then click that profile, and hit Profile Settings and choose the correct appdata folder.\n
+        - And that's it!\n
+        \n
+        This manager will only get better with time, and I thank you for choosing this one. <3"""
+
+        label = Label(frame, text=intro_text, justify=LEFT, wraplength=550, anchor="w")
+        label.pack(fill=BOTH, expand=True)
+
+        ttk.Button(frame, text="Close", command=intro.destroy).pack(pady=10)
+
+        self.config["seen_intro"] = True
+        self.save_config()
+
+        self.apply_theme_to_window(win)
 
 
 
@@ -295,10 +370,15 @@ class DDLCManager:
         win = Toplevel(self.root)
         win.title("Settings")
         win.resizable(False, False)
+        self.apply_theme_to_window(win)
+
 
         
         content = ttk.Frame(win)
         content.pack(padx=20, pady=20)
+
+        #Intro
+        ttk.Button(content, text="View Intro", command=self.show_intro_window).pack(pady=5)
 
         #Update
         ttk.Button(content, text="Check for Updates", command=lambda: self.check_for_updates(auto=False)).pack(pady=(10, 0))
@@ -444,6 +524,7 @@ del /f /q "%~f0"
                 update_win.title("Update Available!")
                 update_win.geometry("500x400")
 
+
                 ttk.Label(update_win, text=f"A new version (v{latest}) is available!").pack(pady=10)
                 text = Text(update_win, wrap="word", height=15, bg="#f4f4f4")
                 text.insert(END, changelog)
@@ -455,6 +536,7 @@ del /f /q "%~f0"
                 ttk.Button(btn_frame, text="Download and Launch", command=download_update).pack(side=LEFT, padx=5)
                 ttk.Button(btn_frame, text="Ignore this version", command=ignore_future).pack(side=LEFT, padx=5)
                 ttk.Button(btn_frame, text="Close", command=update_win.destroy).pack(side=LEFT, padx=5)
+                self.apply_theme_to_window(win)
 
             elif current_parts > latest_parts:
                 if not auto:
@@ -467,6 +549,8 @@ del /f /q "%~f0"
             logging.warning(f"Update check failed: {e}")
             if not auto:
                 messagebox.showwarning("Update Check Failed", f"Could not check for updates:\n{e}")
+        self.apply_theme_to_window(win)
+
 
 
     def open_code_entry(self):
@@ -474,6 +558,7 @@ del /f /q "%~f0"
         code_win = Toplevel(self.root)
         code_win.title("    ")
         code_win.resizable(False, False)
+
 
         ttk.Label(code_win, text="     ").pack(padx=10, pady=(10, 0))
         entry = ttk.Entry(code_win, width=40)
@@ -494,6 +579,8 @@ del /f /q "%~f0"
 
         code_win.update_idletasks()
         code_win.geometry(f"{entry.winfo_reqwidth() + 40}x{entry.winfo_reqheight() + 100}")
+        self.apply_theme_to_window(win)
+
 
 
 
@@ -505,12 +592,15 @@ del /f /q "%~f0"
         self.debug_text = Text(self.debug_window, wrap="word", bg="#1e1e1e", fg="#d4d4d4")
         self.debug_text.pack(fill=BOTH, expand=True)
         self.update_debug_log()
+        self.apply_theme_to_window(win)
+
     
     def show_session_info(self):
         info_win = Toplevel(self.root)
         info_win.title("Session Info")
         info_win.geometry("400x300")
         info_win.resizable(False, False)
+
 
         content = ttk.Frame(info_win)
         content.pack(padx=20, pady=20, fill=BOTH, expand=True)
@@ -551,6 +641,8 @@ del /f /q "%~f0"
         ttk.Label(content, text=f"Total Playtime: {format_time(total_seconds)}").pack(anchor="w", pady=5)
 
         ttk.Button(content, text="Close", command=info_win.destroy).pack(pady=(20, 5))
+        self.apply_theme_to_window(win)
+
 
 
     def update_debug_log(self):
@@ -771,6 +863,8 @@ del /f /q "%~f0"
         self.mods_window = Toplevel(self.root)
         self.mods_window.title("Imported Mods")
         self.mods_window.geometry("400x300")
+
+
         mods = os.listdir(PATHS["MODS"])
         self.mods_tree = ttk.Treeview(self.mods_window, columns=(), show="tree", selectmode="browse")
         self.mods_tree.heading("#0", text="Mod Name", anchor=W)
@@ -781,6 +875,8 @@ del /f /q "%~f0"
         btn_frame.pack(pady=(0, 10))
         ttk.Button(btn_frame, text="Rename Mod", command=self.rename_selected_mod).pack(side=LEFT, padx=5)
         ttk.Button(btn_frame, text="Close", command=self.mods_window.destroy).pack(side=LEFT, padx=5)
+        self.apply_theme_to_window(win)
+
 
     def rename_selected_mod(self):
         selected = self.mods_tree.selection()
@@ -791,6 +887,7 @@ del /f /q "%~f0"
         rename_window.title("Rename Mod")
         ttk.Label(rename_window, text="New Mod Name:").pack(padx=10, pady=5)
         new_name_entry = ttk.Entry(rename_window)
+
         new_name_entry.insert(0, old_name)
         new_name_entry.pack(padx=10, pady=5)
         def apply_rename():
@@ -806,6 +903,8 @@ del /f /q "%~f0"
             self.mods_window.destroy()
             self.view_mods()
         ttk.Button(rename_window, text="Rename", command=apply_rename).pack(pady=10)
+        self.apply_theme_to_window(win)
+
 
     def create_profile(self):
         if not os.listdir(PATHS["VANILLA"]):
@@ -815,6 +914,8 @@ del /f /q "%~f0"
         mods = ["— Vanilla —"] + os.listdir(PATHS["MODS"])
         self.profile_window = Toplevel(self.root)
         self.profile_window.title("Create Profile")
+
+
         ttk.Label(self.profile_window, text="Profile Name:").grid(row=0, column=0, padx=5, pady=5)
         self.profile_entry = ttk.Entry(self.profile_window, width=30)
         self.profile_entry.grid(row=0, column=1, padx=5, pady=5)
@@ -827,6 +928,8 @@ del /f /q "%~f0"
         btn_frame.grid(row=2, columnspan=2, pady=10)
         ttk.Button(btn_frame, text="Create", command=self.build_profile).pack(side=LEFT, padx=5)
         ttk.Button(btn_frame, text="Cancel", command=self.profile_window.destroy).pack(side=LEFT, padx=5)
+        self.apply_theme_to_window(win)
+
 
     def build_profile(self):
         profile_name = self.profile_entry.get().strip()
@@ -877,6 +980,8 @@ del /f /q "%~f0"
         win.title(f"Settings for '{profile_name}'")
         win.geometry("400x250")
 
+
+
         # Executable section
         ttk.Label(win, text="Preferred Executable:").pack(pady=(10, 0))
         exe_label = ttk.Label(win, text=settings.get("preferred_exe", "DDLC.exe"))
@@ -921,6 +1026,9 @@ del /f /q "%~f0"
 
         ttk.Button(win, text="Close", command=win.destroy).pack(pady=15)
 
+        self.apply_theme_to_window(win)
+
+
 
     def choose_executable(self):
         selected = self.tree.selection()
@@ -938,6 +1046,8 @@ del /f /q "%~f0"
         win = Toplevel(self.root)
         win.title(f"Select Executable for '{profile_name}'")
         win.geometry("300x200")
+
+
         ttk.Label(win, text="Choose which .exe to run:").pack(padx=10, pady=5)
         exe_var = StringVar(value=current)
         for exe in exes:
@@ -949,6 +1059,8 @@ del /f /q "%~f0"
             win.destroy()
             messagebox.showinfo("Info", f"Preferred executable set to '{new_exe}'")
         ttk.Button(win, text="OK", command=apply_choice).pack(pady=10)
+        self.apply_theme_to_window(win)
+
 
     def launch_profile(self):
         selected = self.tree.selection()
