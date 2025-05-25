@@ -14,8 +14,13 @@ import ctypes
 import sys
 import webbrowser
 import urllib.request
+import platform
 # Use a persistent folder in %APPDATA%
-APPDATA_DIR = os.path.join(os.getenv("APPDATA"), "DDLCModManager")
+
+if platform.system() == "Windows":
+    APPDATA_DIR = os.path.join(os.getenv("APPDATA"), "DDLCModManager")
+else:
+    APPDATA_DIR = os.path.join(os.path.expanduser("~/.local/share"), "DDLCModManager")
 os.makedirs(APPDATA_DIR, exist_ok=True)
 
 
@@ -38,7 +43,16 @@ ICON_PATH = os.path.join(APPDATA_DIR, "icon.ico")
 
 
 
-
+def open_folder(path):
+    try:
+        if platform.system() == "Windows":
+            os.startfile(path)
+        elif platform.system() == "Linux":
+            subprocess.Popen(["xdg-open", path])
+        else:
+            logging.warning(f"Unsupported platform for opening folder: {platform.system()}")
+    except Exception as e:
+        logging.error(f"Failed to open folder '{path}': {e}")
 
 # Configure logging
 LOG_PATH = os.path.join(APPDATA_DIR, "ddlc_manager.log")
@@ -57,7 +71,7 @@ PATHS = {
     "VANILLA": os.path.join(APPDATA_DIR, "vanilla"),
     "MODS": os.path.join(APPDATA_DIR, "mods"),
     "PROFILES": os.path.join(APPDATA_DIR, "profiles"),
-    "APPDATA": os.path.expandvars(r"%APPDATA%\\RenPy"),
+    "APPDATA": os.path.expandvars(r"%APPDATA%\RenPy") if platform.system() == "Windows" else os.path.expanduser("~/.renpy"),
     "BACKUPS": os.path.join(APPDATA_DIR, "appdata_backups")
 }
 
@@ -77,32 +91,41 @@ class SessionTimer:
         self.start_time = start_time
         self.on_end_callback = on_end_callback
         self.running = True
-
-        self.rpc.update(
-            state=f"Playing {self.mod_name}",
-            details=f"Profile: {self.profile_name}",
-            start=self.start_time,
-            large_image="modding_club",
-            large_text="Doki Doki Modding Club",
-            small_image="playing_a_mod",
-            small_text="Playing"
-        )
-
         self.start_tick = time.time()
+
+
+        if self.rpc:
+            try:
+                self.rpc.update(
+                    state=f"Playing {self.mod_name}",
+                    details=f"Profile: {self.profile_name}",
+                    start=self.start_time,
+                    large_image="modding_club",
+                    large_text="Doki Doki Modding Club",
+                    small_image="playing_a_mod",
+                    small_text="Playing"
+                )
+            except Exception as e:
+                logging.warning(f"Discord RPC failed on session start: {e}")
 
     def stop(self):
         if self.running:
             self.running = False
             elapsed = int(time.time() - self.start_tick)
-            self.rpc.update(
-                state="Browsing Profiles",
-                details="In Launcher",
-                large_image="modding_club",
-                large_text="Doki Doki Modding Club",
-                small_image="in_launcher",
-                small_text="In Launcher"
-            )
+            if self.rpc:
+                try:
+                    self.rpc.update(
+                        state="Browsing Profiles",
+                        details="In Launcher",
+                        large_image="modding_club",
+                        large_text="Doki Doki Modding Club",
+                        small_image="in_launcher",
+                        small_text="In Launcher"
+                    )
+                except Exception as e:
+                    logging.warning(f"Discord RPC failed on session stop: {e}")
             self.on_end_callback(elapsed)
+
 
 
 
@@ -255,7 +278,7 @@ class DDLCManager:
             except Exception as e:
                 logging.error(f"Failed to read profile settings from {settings_path}: {e}")
         return {
-            "preferred_exe": "DDLC.exe",
+            "preferred_exe": "DDLC.sh",
             "mod_name": "Unknown",
             "install_date": "Unknown",
             "last_played": None,
@@ -340,7 +363,7 @@ class DDLCManager:
         self.config["seen_intro"] = True
         self.save_config()
 
-        self.apply_theme_to_window(win)
+        self.apply_theme_to_window(intro)
 
 
 
@@ -413,8 +436,8 @@ class DDLCManager:
         if self.config.get("debug_enabled"):
             ttk.Separator(content).pack(fill=X, pady=10)
             ttk.Label(content, text="Advanced Tools:").pack(pady=(5, 2))
-            ttk.Button(content, text="Open Profiles Folder", command=lambda: os.startfile(PATHS["PROFILES"])).pack(pady=2)
-            ttk.Button(content, text="Open Mods Folder", command=lambda: os.startfile(PATHS["MODS"])).pack(pady=2)
+            ttk.Button(content, text="Open Profiles Folder", command=lambda: open_folder(PATHS["PROFILES"])).pack(pady=2)
+            ttk.Button(content, text="Open Mods Folder", command=lambda: open_folder(PATHS["MODS"])).pack(pady=2)
             ttk.Button(content, text="Open Debug Log", command=self.show_debug_window).pack(pady=2)
             ttk.Button(content, text="Open Session Info", command=self.show_session_info).pack(pady=2)
 
@@ -536,7 +559,7 @@ del /f /q "%~f0"
                 ttk.Button(btn_frame, text="Download and Launch", command=download_update).pack(side=LEFT, padx=5)
                 ttk.Button(btn_frame, text="Ignore this version", command=ignore_future).pack(side=LEFT, padx=5)
                 ttk.Button(btn_frame, text="Close", command=update_win.destroy).pack(side=LEFT, padx=5)
-                self.apply_theme_to_window(win)
+                self.apply_theme_to_window(update_win)
 
             elif current_parts > latest_parts:
                 if not auto:
@@ -549,7 +572,6 @@ del /f /q "%~f0"
             logging.warning(f"Update check failed: {e}")
             if not auto:
                 messagebox.showwarning("Update Check Failed", f"Could not check for updates:\n{e}")
-        self.apply_theme_to_window(win)
 
 
 
@@ -579,7 +601,7 @@ del /f /q "%~f0"
 
         code_win.update_idletasks()
         code_win.geometry(f"{entry.winfo_reqwidth() + 40}x{entry.winfo_reqheight() + 100}")
-        self.apply_theme_to_window(win)
+        self.apply_theme_to_window(code_win)
 
 
 
@@ -592,7 +614,7 @@ del /f /q "%~f0"
         self.debug_text = Text(self.debug_window, wrap="word", bg="#1e1e1e", fg="#d4d4d4")
         self.debug_text.pack(fill=BOTH, expand=True)
         self.update_debug_log()
-        self.apply_theme_to_window(win)
+        self.apply_theme_to_window(self.debug_window)
 
     
     def show_session_info(self):
@@ -641,7 +663,7 @@ del /f /q "%~f0"
         ttk.Label(content, text=f"Total Playtime: {format_time(total_seconds)}").pack(anchor="w", pady=5)
 
         ttk.Button(content, text="Close", command=info_win.destroy).pack(pady=(20, 5))
-        self.apply_theme_to_window(win)
+        self.apply_theme_to_window(info_win)
 
 
 
@@ -707,6 +729,9 @@ del /f /q "%~f0"
 
         self.status = ttk.Label(self.root, text="Ready", relief=SUNKEN)
         self.status.pack(side=BOTTOM, fill=X)
+        self.finish_button = ttk.Button(self.root, text="Finish Session", command=self.stop_timer_if_running, state=DISABLED)
+        self.finish_button.pack(side=BOTTOM, pady=10)
+
 
     def delete_vanilla(self):
         if os.path.exists(PATHS["VANILLA"]):
@@ -821,11 +846,34 @@ del /f /q "%~f0"
     def import_vanilla(self):
         logging.info("Begin Vanilla Import")
         path = filedialog.askdirectory(title="Select Vanilla DDLC Folder")
-        if path and os.path.exists(os.path.join(path, "DDLC.exe")):
-            shutil.rmtree(PATHS["VANILLA"], ignore_errors=True)
-            shutil.copytree(path, PATHS["VANILLA"])
-            messagebox.showinfo("Success", "Vanilla DDLC imported successfully!")
-            logging.info("Vanilla files imported")
+
+        if not path:
+            return
+
+        has_windows_exe = os.path.exists(os.path.join(path, "DDLC.exe"))
+        has_linux_sh = os.path.exists(os.path.join(path, "DDLC.sh"))
+
+        if not (has_windows_exe or has_linux_sh):
+            messagebox.showerror("Error", "Selected folder doesn't contain a valid DDLC install (missing DDLC.exe or DDLC.sh)")
+            logging.warning("Invalid DDLC folder: no executable found.")
+            return
+
+        # Remove old vanilla data
+        shutil.rmtree(PATHS["VANILLA"], ignore_errors=True)
+        shutil.copytree(path, PATHS["VANILLA"])
+        logging.info("Vanilla files copied")
+
+        # If on Linux, ensure DDLC.sh is executable
+        if has_linux_sh:
+            try:
+                sh_path = os.path.join(PATHS["VANILLA"], "DDLC.sh")
+                os.chmod(sh_path, 0o755)
+                logging.info("Made DDLC.sh executable")
+            except Exception as e:
+                logging.warning(f"Failed to make DDLC.sh executable: {e}")
+
+        messagebox.showinfo("Success", "Vanilla DDLC imported successfully!")
+
 
     def import_mod(self):
         logging.info("Begin Mod Import")
@@ -875,7 +923,7 @@ del /f /q "%~f0"
         btn_frame.pack(pady=(0, 10))
         ttk.Button(btn_frame, text="Rename Mod", command=self.rename_selected_mod).pack(side=LEFT, padx=5)
         ttk.Button(btn_frame, text="Close", command=self.mods_window.destroy).pack(side=LEFT, padx=5)
-        self.apply_theme_to_window(win)
+        self.apply_theme_to_window(self.mods_window)
 
 
     def rename_selected_mod(self):
@@ -903,7 +951,7 @@ del /f /q "%~f0"
             self.mods_window.destroy()
             self.view_mods()
         ttk.Button(rename_window, text="Rename", command=apply_rename).pack(pady=10)
-        self.apply_theme_to_window(win)
+        self.apply_theme_to_window(rename_window)
 
 
     def create_profile(self):
@@ -928,7 +976,7 @@ del /f /q "%~f0"
         btn_frame.grid(row=2, columnspan=2, pady=10)
         ttk.Button(btn_frame, text="Create", command=self.build_profile).pack(side=LEFT, padx=5)
         ttk.Button(btn_frame, text="Cancel", command=self.profile_window.destroy).pack(side=LEFT, padx=5)
-        self.apply_theme_to_window(win)
+        self.apply_theme_to_window(self.profile_window)
 
 
     def build_profile(self):
@@ -988,7 +1036,7 @@ del /f /q "%~f0"
         exe_label.pack()
 
         def choose_exe():
-            exes = [f for f in os.listdir(profile_path) if f.lower().endswith(".exe")]
+            exes = [f for f in os.listdir(profile_path) if f.endswith((".exe", ".sh"))]
             if not exes:
                 messagebox.showerror("Error", "No executables found!")
                 return
@@ -1093,7 +1141,7 @@ del /f /q "%~f0"
         settings = self.load_profile_settings(profile_path)
         exe_name = settings.get("preferred_exe", "DDLC.exe")
         exe_path = os.path.join(profile_path, exe_name)
-
+        
         if not os.path.exists(exe_path):
             messagebox.showerror("Error", "Executable not found!")
             logging.info("Executable not found, stopping.")
@@ -1133,14 +1181,24 @@ del /f /q "%~f0"
         mod_name = settings.get("mod_name", "DDLC")
         start_time = int(time.time())
 
-        process = subprocess.Popen(
-            f'start "" "{exe_path}"',
-            cwd=profile_path,
-            shell=True
-        )
+        def launch_profile_executable(exe_path, profile_path):
+            if platform.system() == "Windows":
+                subprocess.Popen(f'start "" "{exe_path}"', cwd=profile_path, shell=True)
+            else:
+                ddlc_binary_path = os.path.join(profile_path, "lib", "linux-x86_64", "DDLC")
+                if os.path.exists(ddlc_binary_path):
+                    try:
+                        os.chmod(ddlc_binary_path, 0o755)
+                        logging.info("Made DDLC binary executable")
+                    except Exception as e:
+                        logging.warning(f"Failed to chmod DDLC binary: {e}")
+                subprocess.Popen([exe_path], cwd=profile_path)
+
+        launch_profile_executable(exe_path, profile_path)
         logging.info("Game attempted launch.")
         self.config["last_profile"] = profile_name
         self.save_config()
+        self.finish_button.config(state=NORMAL)
 
         # Timer to track playtime
         def end_session(elapsed):
@@ -1231,6 +1289,9 @@ del /f /q "%~f0"
     def stop_timer_if_running(self, event=None):
         if hasattr(self, 'session_timer') and self.session_timer.running:
             self.session_timer.stop()
+        if hasattr(self, 'session_timer') and self.session_timer.running:
+            self.session_timer.stop()
+            self.finish_button.config(state=DISABLED)
 
 
     @staticmethod
