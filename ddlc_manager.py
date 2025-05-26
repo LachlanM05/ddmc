@@ -15,7 +15,6 @@ import sys
 import webbrowser
 import urllib.request
 import platform
-# Use a persistent folder in %APPDATA%
 
 if platform.system() == "Windows":
     APPDATA_DIR = os.path.join(os.getenv("APPDATA"), "DDLCModManager")
@@ -33,7 +32,7 @@ CONFIG_FILE = os.path.join(APPDATA_DIR, "config.txt")
 def parse_version(v):
     return [int(x) for x in v.strip().split(".") if x.isdigit()]
 
-# External downloads
+# External downloads [Currently inactive]
 EXE_DOWNLOAD_BASE = "https://lachlanm05.com/ddmc_r/ddmc_manager.exe"
 ICON_URL = "https://lachlanm05.com/ddmc_r/icon.ico"
 ICON_PATH = os.path.join(APPDATA_DIR, "icon.ico")
@@ -129,7 +128,7 @@ class SessionTimer:
 
 
 
-# Utility: Get actual RenPy save folder for DDLC
+# save folder for DDLC
 def get_ddlc_save_path():
     if not os.path.exists(PATHS["APPDATA"]):
         return None
@@ -223,7 +222,6 @@ class DDLCManager:
             else:
                 logging.warning("Could not delete old executable after retries.")
 
-            # Clear config after retry attempt ends (success or not)
             self.config["old_exe"] = None
             self.save_config()
 
