@@ -1,3 +1,5 @@
 # Ignore the gignore (gitignore) folder inside the app.
 app/gignored/*
 app/venv/*
+app/__pycache__/*
+app/fakeroot/*
