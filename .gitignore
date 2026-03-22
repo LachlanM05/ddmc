@@ -1,2 +1,2 @@
 # Ignore the gignore (gitignore) folder inside the app.
-app/gignore/*
+app/gignored/*
