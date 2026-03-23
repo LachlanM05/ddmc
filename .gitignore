@@ -5,3 +5,5 @@ app/__pycache__/*
 app/fakeroot/*
 app/core/__pycache__/*
 app/core/__pycache__/
+app/build/*
+app/dist/*
