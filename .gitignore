@@ -7,3 +7,4 @@ app/core/__pycache__/*
 app/core/__pycache__/
 app/build/*
 app/dist/*
+app/DDLC_Mod_Manager.spec

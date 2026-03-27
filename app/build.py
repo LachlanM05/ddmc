@@ -28,9 +28,8 @@ def build_executable():
         "--noconfirm",              # Automatically overwrite output folder
         "--clean",                  # Clean PyInstaller cache
         
-        # We use --onedir instead of --onefile. 
-        # --onedir is MUCH faster to launch for PyQt6 apps and easier to debug.
-        "--onedir",                 
+        # onefile is just better for dist. my cpu is fast enough and the app is tinnnny.
+        "--onefile",                 
         
         "main.py"                   # Our entry point
     ]

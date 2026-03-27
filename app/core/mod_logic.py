@@ -59,25 +59,37 @@ class ProfileManager:
 
     @staticmethod
     def install_zipped_mod(profile_name: str, zip_path: str | Path):
-        """Extracts a zipped mod directly into the target profile."""
+        """Extracts a zipped mod and properly merges it into the target profile."""
         profile_path = PROFILES_DIR / profile_name
-        game_folder = profile_path / "game"
         
         if not profile_path.exists():
             raise FileNotFoundError(f"Profile '{profile_name}' does not exist.")
 
         with zipfile.ZipFile(zip_path, "r") as zip_ref:
-            # Extract to a temporary folder inside the profile first
             temp_extract = profile_path / "_temp_mod_extract"
             zip_ref.extractall(temp_extract)
 
-            # DDLC Mod Quirk: Move .rpa, .rpy, .rpyc files to the game/ folder
-            for item in temp_extract.rglob("*"):
-                if item.is_file():
-                    if item.suffix in [".rpa", ".rpy", ".rpyc"]:
-                        rel_path = item.relative_to(temp_extract)
-                        target = game_folder / rel_path.name
-                        
+            # Step 1: Handle nested root folders 
+            # (e.g., if the zip just contains one 'Salvation_Remake_v2' folder)
+            mod_root = temp_extract
+            contents = list(temp_extract.iterdir())
+            if len(contents) == 1 and contents[0].is_dir():
+                mod_root = contents[0]
+
+            # Step 2: Determine the mod's packaging structure
+            # Check if the mod includes structural/engine folders
+            has_engine_folders = any((mod_root / folder).exists() for folder in ["game", "renpy", "lib", "characters"])
+            
+            if has_engine_folders:
+                # Modern Mod: Merge the entire mod (including custom engine upgrades) over the vanilla profile
+                shutil.copytree(mod_root, profile_path, dirs_exist_ok=True)
+            else:
+                # Legacy Mod: It's just bare files. Move them all into the game/ folder.
+                game_folder = profile_path / "game"
+                for item in mod_root.rglob("*"):
+                    if item.is_file():
+                        rel_path = item.relative_to(mod_root)
+                        target = game_folder / rel_path
                         target.parent.mkdir(parents=True, exist_ok=True)
                         shutil.move(str(item), str(target))
 
